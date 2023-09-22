@@ -24,9 +24,15 @@
 
 
 #include "port_handler.h"
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
 
 namespace dynamixel
 {
+
+#define PORT_HANDLER_IP_PKTSTART 0xAA
+#define PORT_HANDLER_IP_PKTEND   0xBB
 
 ////////////////////////////////////////////////////////////////////////////////
 /// @brief The class for control port in Linux using IP sockets
@@ -35,7 +41,10 @@ class PortHandlerIP : public PortHandler
 {
  private:
   int     socket_fd_;
+  bool socket_open; // Indicates if the socket is open or not
   int baudrate_;  // For compatibility
+
+  struct addrinfo bridge_;
 
   char port_name_[100]; // For compatibility
   double  packet_start_time_;

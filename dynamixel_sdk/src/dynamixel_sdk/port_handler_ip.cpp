@@ -19,6 +19,7 @@
 
 #if defined(__linux__)
 
+#include <stdlib.h>
 #include <stdio.h>
 #include <fcntl.h>
 #include <string.h>
@@ -62,6 +63,7 @@ using namespace dynamixel;
 
 PortHandlerIP::PortHandlerIP(const char *port_name)
   : socket_fd_(-1),
+  socket_open(false),
   baudrate_(DEFAULT_BAUDRATE_), // For compatibility
     packet_start_time_(0.0),
     packet_timeout_(0.0),
@@ -73,28 +75,50 @@ PortHandlerIP::PortHandlerIP(const char *port_name)
 
 bool PortHandlerIP::openPort()
 {
-  // TODO: this does not change
   return setBaudRate(baudrate_);
 }
 
 void PortHandlerIP::closePort()
 {
-  // TODO: this does not change
   if(socket_fd_ != -1)
     close(socket_fd_);
   socket_fd_ = -1;
+  socket_open = false;
 }
 
 void PortHandlerIP::clearPort()
 {
-  // TODO: No equivalent for IP
-  tcflush(socket_fd_, TCIFLUSH);
+  // No equivalent for IP
+  //tcflush(socket_fd_, TCIFLUSH);
 }
 
 void PortHandlerIP::setPortName(const char *port_name)
 {
-  // TODO: this does not change, maintained for compatibility
+  struct addrinfo hints;
   strcpy(port_name_, port_name);
+  // We consider the port_name to be the address of the bridge
+  // First split the port_name into IP and port number at ':'
+  char *port_number = strchr(port_name_, ':');
+  // TODO: validate port_name in the constructor because this doesn't return
+  if (!port_number){
+    return;
+  }
+  *port_number = 0; // Terminate the IP address
+  port_number ++;
+  memset(&hints, 0, sizeof(struct addrinfo));
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_flags = 0;
+  hints.ai_protocol = 0;
+
+  if (getaddrinfo(port_name_, port_number, &hints, &bridge_)){
+    printf("[PortHandlerIP::setPortName] Error parsing bridge address\n");
+    return;
+  }
+
+  // Put back the ':' in the port name
+  port_number --;
+  *port_number = ':';
 }
 
 char *PortHandlerIP::getPortName()
@@ -105,24 +129,11 @@ char *PortHandlerIP::getPortName()
 // TODO: baud number ??
 bool PortHandlerIP::setBaudRate(const int baudrate)
 {
-  // TODO: this closes and reopens the port every time the
-  // baudrate changes. It will have to change to account for the
-  // socket status.
-  int baud = getCFlagBaud(baudrate);
+  // If the socket is already open just ignore
+  if (socket_open) return true;
 
-  closePort();
-
-  if(baud <= 0)   // custom baudrate
-  {
-    setupPort(B38400);
-    baudrate_ = baudrate;
-    return setCustomBaudrate(baudrate);
-  }
-  else
-  {
-    baudrate_ = baudrate;
-    return setupPort(baud);
-  }
+  // Otherwise open the socket by calling setupPort
+  return setupPort(baudrate);
 }
 
 int PortHandlerIP::getBaudRate()
@@ -140,33 +151,75 @@ int PortHandlerIP::getBytesAvailable()
 
 int PortHandlerIP::readPort(uint8_t *packet, int length)
 {
-  // TODO: this stays the same as it uses socket operations
-  return read(socket_fd_, packet, length);
+  // TODO - this all needs to be moved to the bridge.
+  // Packets are coming in framed
+  // Read bytes until we get to the start of frame
+  uint8_t byte;
+  uint16_t new_length;
+  int result;
+  byte = 0;
+  while (byte != PORT_HANDLER_IP_PKTSTART){
+    read(socket_fd_, &byte, 1);
+  }
+  read(socket_fd_, &new_length, 2);
+  new_length = ntohs(new_length);
+  if (new_length != length){
+    // TODO we need to indicate an error here
+    return -1;
+  }
+  // Read until we complete the packet (requested length)
+  while (new_length > 0){
+    result = read(socket_fd_, packet, length);
+    if (result == -1) {
+      // TODO error
+      return -1;
+    }
+    packet += result;
+    new_length -= result;
+  }
+  // Read the terminator
+  read(socket_fd_, &byte, 1);
+  if (byte != PORT_HANDLER_IP_PKTEND){
+    // TODO weird error
+  }
+
+  // If we got here we successfully read the required length
+  return length;
 }
 
 int PortHandlerIP::writePort(uint8_t *packet, int length)
 {
-  // TODO: this stays the same as it uses socket operations
-  return write(socket_fd_, packet, length);
+  // This function changes to include he framing of the USB packet
+  int result = 0;
+  uint16_t new_length = htons(length);
+  uint8_t *buf = (uint8_t*)malloc(length+2+2);
+  buf[0] = PORT_HANDLER_IP_PKTSTART;
+  buf[1] = new_length >> 8;
+  buf[2] = new_length & 0x00FF;
+  memcpy(buf+3, packet, length);
+  buf[3+length] = PORT_HANDLER_IP_PKTEND;
+  result = write(socket_fd_, buf, length+2+2);
+  free(buf);
+  return result;
 }
 
 void PortHandlerIP::setPacketTimeout(uint16_t packet_length)
 {
-  // TODO: maintained for compatibility
+  // maintained for compatibility
   packet_start_time_  = getCurrentTime();
   packet_timeout_     = (tx_time_per_byte * (double)packet_length) + (LATENCY_TIMER * 2.0) + 2.0;
 }
 
 void PortHandlerIP::setPacketTimeout(double msec)
 {
-  // TODO: maintained for compatibility
+  // maintained for compatibility
   packet_start_time_  = getCurrentTime();
   packet_timeout_     = msec;
 }
 
 bool PortHandlerIP::isPacketTimeout()
 {
-  // TODO: maintained for compatibility
+  // maintained for compatibility
   if(getTimeSinceStart() > packet_timeout_)
   {
     packet_timeout_ = 0;
@@ -194,40 +247,34 @@ double PortHandlerIP::getTimeSinceStart()
 }
 
 /**
- * TODO: this will change to create the socket and connect to server
- * This is a private function called from setBaudrate
+ * Create the socket and connect to server
+ * Note: This is a private function called from setBaudrate
  */
 bool PortHandlerIP::setupPort(int cflag_baud)
 {
-  struct termios newtio;
-
-  socket_fd_ = open(port_name_, O_RDWR|O_NOCTTY|O_NONBLOCK);
+  socket_fd_ = socket(AF_INET, SOCK_STREAM, 0);
   if(socket_fd_ < 0)
   {
     printf("[PortHandlerIP::SetupPort] Error opening serial port!\n");
     return false;
   }
 
-  bzero(&newtio, sizeof(newtio)); // clear struct for new port settings
+  // Connect to the server
+  if (connect(socket_fd_, bridge_.ai_addr, bridge_.ai_addrlen) == -1)
+  {
+    printf("[PortHandlerIP::SetupPort] Error connecting to server\n");
+    return false;
+  }
 
-  newtio.c_cflag = cflag_baud | CS8 | CLOCAL | CREAD;
-  newtio.c_iflag = IGNPAR;
-  newtio.c_oflag      = 0;
-  newtio.c_lflag      = 0;
-  newtio.c_cc[VTIME]  = 0;
-  newtio.c_cc[VMIN]   = 0;
-
-  // clean the buffer and activate the settings for the port
-  tcflush(socket_fd_, TCIFLUSH);
-  tcsetattr(socket_fd_, TCSANOW, &newtio);
-
+  socket_open = true;
   tx_time_per_byte = (1000.0 / (double)baudrate_) * 10.0;
   return true;
 }
 
 bool PortHandlerIP::setCustomBaudrate(int speed)
 {
-  // TODO: not used and private so probably removed
+  // Not used and private so can be removed
+  return true;
   // try to set a custom divisor
   struct serial_struct ss;
   if(ioctl(socket_fd_, TIOCGSERIAL, &ss) != 0)
