@@ -36,6 +36,11 @@ bool IPtoUsbBridge::setupIPSocket()
         return false;
     }
 
+    // Mark the queue for listening
+    if (listen(ip_socket_fd_, 1)){
+        return false;
+    }
+
     return true;
 }
 
@@ -157,19 +162,24 @@ void IPtoUsbBridge::bridge()
 
     // Accept connections on the IP port
     struct sockaddr client_addr;
-    socklen_t *client_addr_len;
-    *client_addr_len = sizeof(client_addr);
+    socklen_t client_addr_len;
+    client_addr_len = sizeof(client_addr);
     int client_sock;
-    client_sock = accept4(ip_socket_fd_, &client_addr, client_addr_len,
+    client_sock = accept4(ip_socket_fd_, &client_addr, &client_addr_len,
                             SOCK_NONBLOCK); // Open non-blocking
-
+    if (client_sock > 0){
+        printf("[Bridge::bridge] client connected %d\n", client_sock);
+    }else{
+        perror("[Bridge::bridge]");
+    }
+    
     // Start listening for data on both IP and USB ports
     watched_fds[0].fd = ip_socket_fd_;
     watched_fds[0].events = POLLIN;
     watched_fds[1].fd = usb_socket_fd_;
     watched_fds[1].events = POLLIN;
     while (true){
-        if (poll(watched_fds, 2, 10) > 0){ // Wait for 10ms
+        if (poll(watched_fds, 1, 100) > 0){ // Wait for 10ms
             // process events
             if (watched_fds[0].revents){
                 read_ip_and_send_usb();
@@ -213,8 +223,8 @@ int main(){
     }
     if (!bridge->setupUSBPort()){
         printf("[Bridge::SetupUSBPort] error setting up USB comms\n");
-        delete bridge;
-        return -1;
+        //delete bridge;
+        //return -1;
     }
 
     bridge->bridge();
