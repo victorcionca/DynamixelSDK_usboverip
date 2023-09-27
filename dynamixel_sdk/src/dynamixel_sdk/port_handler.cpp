@@ -18,7 +18,11 @@
 
 #if defined(__linux__)
 #include "port_handler.h"
+#if defined(__LINUX_IP__)
+#include "port_handler_ip.h"
+#else
 #include "port_handler_linux.h"
+#endif
 #elif defined(__APPLE__)
 #include "port_handler.h"
 #include "port_handler_mac.h"
@@ -36,7 +40,11 @@ using namespace dynamixel;
 PortHandler *PortHandler::getPortHandler(const char *port_name)
 {
 #if defined(__linux__)
+#if defined(__LINUX_IP__)
+  return (PortHandler *)(new PortHandlerIP(port_name));
+#else
   return (PortHandler *)(new PortHandlerLinux(port_name));
+#endif
 #elif defined(__APPLE__)
   return (PortHandler *)(new PortHandlerMac(port_name));
 #elif defined(_WIN32) || defined(_WIN64)

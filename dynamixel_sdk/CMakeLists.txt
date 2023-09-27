@@ -49,8 +49,12 @@ else()
   add_library(dynamixel_sdk SHARED
     ${DYNAMIXEL_SDK_SOURCES}
     src/dynamixel_sdk/port_handler_linux.cpp
+    src/dynamixel_sdk/port_handler_linux_ip.cpp
   )
 endif()
+
+# Define the compile flag for the IP socket
+target_compile_definitions(dynamixel_sdk __LINUX_IP__)
 
 ################################################################################
 # Install
