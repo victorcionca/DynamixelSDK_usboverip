@@ -24,6 +24,8 @@ include_directories(
   include/${PROJECT_NAME}
 )
 
+set(CMAKE_INSTALL_PREFIX /opt/ros/galactic)
+
 set(DYNAMIXEL_SDK_SOURCES
   src/dynamixel_sdk/packet_handler.cpp
   src/dynamixel_sdk/protocol1_packet_handler.cpp
@@ -49,12 +51,12 @@ else()
   add_library(dynamixel_sdk SHARED
     ${DYNAMIXEL_SDK_SOURCES}
     src/dynamixel_sdk/port_handler_linux.cpp
-    src/dynamixel_sdk/port_handler_linux_ip.cpp
+    src/dynamixel_sdk/port_handler_ip.cpp
   )
 endif()
 
 # Define the compile flag for the IP socket
-target_compile_definitions(dynamixel_sdk __LINUX_IP__)
+target_compile_definitions(dynamixel_sdk PUBLIC __LINUX_IP__)
 
 ################################################################################
 # Install
