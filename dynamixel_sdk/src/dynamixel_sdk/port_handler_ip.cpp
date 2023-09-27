@@ -95,6 +95,7 @@ void PortHandlerIP::clearPort()
 void PortHandlerIP::setPortName(const char *port_name)
 {
   struct addrinfo hints;
+  struct addrinfo *addrlist; // To store the output of getaddrinfo
   strcpy(port_name_, port_name);
   // We consider the port_name to be the address of the bridge
   // First split the port_name into IP and port number at ':'
@@ -111,10 +112,11 @@ void PortHandlerIP::setPortName(const char *port_name)
   hints.ai_flags = 0;
   hints.ai_protocol = 0;
 
-  if (getaddrinfo(port_name_, port_number, &hints, &bridge_)){
+  if (getaddrinfo(port_name_, port_number, &hints, &addrlist)){
     printf("[PortHandlerIP::setPortName] Error parsing bridge address\n");
     return;
   }
+  bridge_ = *addrlist;
 
   // Put back the ':' in the port name
   port_number --;
