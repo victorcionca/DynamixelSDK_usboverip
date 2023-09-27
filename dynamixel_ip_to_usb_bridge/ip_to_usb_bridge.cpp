@@ -36,6 +36,7 @@ bool IPtoUsbBridge::setupIPSocket()
         return false;
     }
 
+    return true;
 }
 
 bool IPtoUsbBridge::setupUSBPort()
@@ -69,6 +70,8 @@ bool IPtoUsbBridge::setupUSBPort()
     tcsetattr(usb_socket_fd_, TCSANOW, &newtio);
 
     tx_time_per_byte = (1000.0 / (double)1000000) * 10.0; // TODO baudrate hardcoded
+
+    return true;
 }
 
 void IPtoUsbBridge::read_ip_and_send_usb()
@@ -166,7 +169,7 @@ void IPtoUsbBridge::bridge()
     watched_fds[1].fd = usb_socket_fd_;
     watched_fds[1].events = POLLIN;
     while (true){
-        if (poll(watched_fds, 2, 10) > 0){
+        if (poll(watched_fds, 2, 10) > 0){ // Wait for 10ms
             // process events
             if (watched_fds[0].revents){
                 read_ip_and_send_usb();
@@ -179,9 +182,13 @@ void IPtoUsbBridge::bridge()
     }
 }
 
-void closeIPSocket();
+void IPtoUsbBridge::closeIPSocket(){
+    close(ip_socket_fd_);
+}
 
-void closeUSBPort();
+void IPtoUsbBridge::closeUSBPort(){
+    close(usb_socket_fd_);
+}
 
 void clearPort();
 
@@ -196,3 +203,21 @@ void setPacketTimeout(uint16_t packet_length);
 void setPacketTimeout(double msec);
 
 bool isPacketTimeout();
+
+int main(){
+    // TODO - maybe pass the ip and usb ports as cmd line arguments?
+    auto bridge = new IPtoUsbBridge(66666, "/dev/ttyDXL");
+    if (!bridge->setupIPSocket()){
+        printf("[Bridge::SetupIPSocket] error setting up IP socket\n");
+        return -1;
+    }
+    if (!bridge->setupUSBPort()){
+        printf("[Bridge::SetupUSBPort] error setting up USB comms\n");
+        delete bridge;
+        return -1;
+    }
+
+    bridge->bridge();
+
+    return 0;
+}
