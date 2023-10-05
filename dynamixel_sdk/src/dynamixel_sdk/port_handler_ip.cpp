@@ -195,9 +195,10 @@ int PortHandlerIP::writePort(uint8_t *packet, int length)
   int result = 0;
   uint16_t new_length = htons(length);
   uint8_t *buf = (uint8_t*)malloc(length+2+2);
+  printf("[PortHandlerIP:write] send %d bytes\n", length);
   buf[0] = PORT_HANDLER_IP_PKTSTART;
-  buf[1] = new_length >> 8;
-  buf[2] = new_length & 0x00FF;
+  printf("[PortHandlerIP:write] newlength=%02X\n", new_length);
+  ((uint16_t*)(buf+1))[0] = new_length;
   memcpy(buf+3, packet, length);
   buf[3+length] = PORT_HANDLER_IP_PKTEND;
   result = write(socket_fd_, buf, length+2+2);
