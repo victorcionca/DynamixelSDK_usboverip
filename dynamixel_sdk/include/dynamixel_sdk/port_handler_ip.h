@@ -51,6 +51,9 @@ class PortHandlerIP : public PortHandler
   double  packet_timeout_;
   double  tx_time_per_byte;
 
+  uint8_t read_buffer[22]; // TODO relate to usb min length
+  int buffer_length;
+
   bool    setupPort(const int cflag_baud);
   bool    setCustomBaudrate(int speed);
   int     getCFlagBaud(const int baudrate);
@@ -171,7 +174,7 @@ class PortHandlerIP : public PortHandler
   /// @brief The function that checks whether packet timeout is occurred
   /// @description The function checks whether current time is passed by the time of packet timeout from the time set by PortHandlerIP::setPacketTimeout().
   ////////////////////////////////////////////////////////////////////////////////
-  bool    isPacketTimeout();
+  bool    isPacketTimeout(int flag);
 };
 
 }

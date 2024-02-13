@@ -100,6 +100,8 @@ bool PortHandlerLinux::setBaudRate(const int baudrate)
 {
   int baud = getCFlagBaud(baudrate);
 
+  printf("[PortHandlerLinux::setBaud] Baudrate requested: %d got %x\n",
+          baudrate, baud);
   closePort();
 
   if(baud <= 0)   // custom baudrate
@@ -190,6 +192,7 @@ bool PortHandlerLinux::setupPort(int cflag_baud)
 
   bzero(&newtio, sizeof(newtio)); // clear struct for new port settings
 
+  printf("[PortHandlerLinux::SetupPort] Baudrate: %02X\n", cflag_baud);
   newtio.c_cflag = cflag_baud | CS8 | CLOCAL | CREAD;
   newtio.c_iflag = IGNPAR;
   newtio.c_oflag      = 0;

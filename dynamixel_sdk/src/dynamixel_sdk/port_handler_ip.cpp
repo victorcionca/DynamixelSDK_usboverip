@@ -31,6 +31,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <linux/serial.h>
+#include <errno.h>
 
 #include "port_handler_ip.h"
 
@@ -69,6 +70,7 @@ PortHandlerIP::PortHandlerIP(const char *port_name)
     packet_timeout_(0.0),
     tx_time_per_byte(0.0)
 {
+  buffer_length = 0;
   is_using_ = false;
   setPortName(port_name);
 }
@@ -146,6 +148,7 @@ int PortHandlerIP::getBaudRate()
 int PortHandlerIP::getBytesAvailable()
 {
   // TODO: this probably stays the same
+  printf("[PortHandlerIP::getBytesAvailable]\n");
   int bytes_available;
   ioctl(socket_fd_, FIONREAD, &bytes_available);
   return bytes_available;
@@ -154,45 +157,66 @@ int PortHandlerIP::getBytesAvailable()
 int PortHandlerIP::readPort(uint8_t *packet, int length)
 {
   // TODO - this all needs to be moved to the bridge.
-  // Packets are coming in framed
-  // Read bytes until we get to the start of frame
-  uint8_t byte;
-  uint16_t new_length;
   int result;
-  byte = 0;
-  while (byte != PORT_HANDLER_IP_PKTSTART){
-    read(socket_fd_, &byte, 1);
-  }
-  read(socket_fd_, &new_length, 2);
-  new_length = ntohs(new_length);
-  if (new_length != length){
-    // TODO we need to indicate an error here
-    return -1;
-  }
-  // Read until we complete the packet (requested length)
-  while (new_length > 0){
-    result = read(socket_fd_, packet, length);
-    if (result == -1) {
-      // TODO error
-      return -1;
-    }
-    packet += result;
-    new_length -= result;
-  }
-  // Read the terminator
-  read(socket_fd_, &byte, 1);
-  if (byte != PORT_HANDLER_IP_PKTEND){
-    // TODO weird error
+  int to_read = length;
+  if (buffer_length < to_read){
+    to_read = buffer_length;
   }
 
-  // If we got here we successfully read the required length
-  return length;
+  // copy from buffer into packet to_read bytes
+  // advace packet by to_read bytes
+  for (int i=0;i<to_read;i++){
+    *packet = read_buffer[i];
+    packet++;
+  }
+  // move buffer contents back by to_read bytes
+  for (int i=0;i<buffer_length-to_read;i++){
+    read_buffer[i] = read_buffer[to_read+i];
+  }
+  buffer_length -= to_read;
+
+  int remaining = length - to_read;
+  if (remaining > 0) {
+    // read from socket into buffer 11B
+    result = read(socket_fd_, read_buffer, 11);
+    if (result == -1) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        result = 0;
+        remaining = 0;
+      } else {
+        perror("reading: ");
+        return -1;
+      }
+    } else {
+      buffer_length = result;
+      printf("Read %dB: ", result);
+      for (int i = 0; i < result; i++)
+        printf("%02x ", read_buffer[i]);
+      printf("\n");
+      // copy from buffer into packet min(remaining, result)
+      // move buffer contents back by min(remaining, result)
+      if (result < remaining) {
+        remaining = result;
+      }
+      for (int i = 0; i < remaining; i++) {
+        *packet = read_buffer[i];
+        packet++;
+      }
+      // move buffer contents back by to_read bytes
+      for (int i = 0; i < buffer_length - remaining; i++) {
+        read_buffer[i] = read_buffer[remaining + i];
+      }
+      buffer_length -= remaining;
+    }
+  }
+  return to_read + remaining;
 }
 
 int PortHandlerIP::writePort(uint8_t *packet, int length)
 {
   // This function changes to include he framing of the USB packet
   int result = 0;
+  printf("Writing\n");
   uint16_t new_length = htons(length);
   uint8_t *buf = (uint8_t*)malloc(length+2+2);
   buf[0] = PORT_HANDLER_IP_PKTSTART;
@@ -218,9 +242,10 @@ void PortHandlerIP::setPacketTimeout(double msec)
   packet_timeout_     = msec;
 }
 
-bool PortHandlerIP::isPacketTimeout()
+bool PortHandlerIP::isPacketTimeout(int flag)
 {
   // maintained for compatibility
+  //printf("Checking timeout %d\n", flag);
   if(getTimeSinceStart() > packet_timeout_)
   {
     packet_timeout_ = 0;
@@ -253,7 +278,7 @@ double PortHandlerIP::getTimeSinceStart()
  */
 bool PortHandlerIP::setupPort(int cflag_baud)
 {
-  socket_fd_ = socket(AF_INET, SOCK_STREAM, 0);
+  socket_fd_ = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
   if(socket_fd_ < 0)
   {
     printf("[PortHandlerIP::SetupPort] Error opening serial port!\n");
@@ -269,6 +294,7 @@ bool PortHandlerIP::setupPort(int cflag_baud)
 
   socket_open = true;
   tx_time_per_byte = (1000.0 / (double)baudrate_) * 10.0;
+  printf("[PortHandlerIP::SetupPort] Successfully connected\n");
   return true;
 }
 

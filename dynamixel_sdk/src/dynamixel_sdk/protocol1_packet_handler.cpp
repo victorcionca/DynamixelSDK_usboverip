@@ -203,7 +203,7 @@ int Protocol1PacketHandler::rxPacket(PortHandler *port, uint8_t *rxpacket)
         if (rx_length < wait_length)
         {
           // check timeout
-          if (port->isPacketTimeout() == true)
+          if (port->isPacketTimeout(11) == true)
           {
             if (rx_length == 0)
             {
@@ -249,7 +249,7 @@ int Protocol1PacketHandler::rxPacket(PortHandler *port, uint8_t *rxpacket)
     else
     {
       // check timeout
-      if (port->isPacketTimeout() == true)
+      if (port->isPacketTimeout(12) == true)
       {
         if (rx_length == 0)
         {
@@ -322,7 +322,6 @@ int Protocol1PacketHandler::ping(PortHandler *port, uint8_t id, uint8_t *error)
 int Protocol1PacketHandler::ping(PortHandler *port, uint8_t id, uint16_t *model_number, uint8_t *error)
 {
   int result                 = COMM_TX_FAIL;
-
   uint8_t txpacket[6]         = {0};
   uint8_t rxpacket[6]         = {0};
 

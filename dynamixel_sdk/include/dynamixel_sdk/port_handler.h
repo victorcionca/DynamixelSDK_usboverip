@@ -168,7 +168,7 @@ class WINDECLSPEC PortHandler
   /// @brief The function that checks whether packet timeout is occurred
   /// @description The function checks whether current time is passed by the time of packet timeout from the time set by PortHandlerLinux::setPacketTimeout().
   ////////////////////////////////////////////////////////////////////////////////
-  virtual bool    isPacketTimeout() = 0;
+  virtual bool    isPacketTimeout(int flag) = 0;
 };
 
 }
