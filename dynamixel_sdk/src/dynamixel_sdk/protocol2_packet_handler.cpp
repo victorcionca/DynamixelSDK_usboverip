@@ -307,7 +307,7 @@ int Protocol2PacketHandler::txPacket(PortHandler *port, uint8_t *txpacket)
 int Protocol2PacketHandler::rxPacket(PortHandler *port, uint8_t *rxpacket)
 {
   int     result         = COMM_TX_FAIL;
-  printf("[Protocol2Handler::rxPacket]\n");
+  //printf("[Protocol2Handler::rxPacket]\n");
 
   uint16_t rx_length     = 0;
   uint16_t wait_length   = 11; // minimum length (HEADER0 HEADER1 HEADER2 RESERVED ID LENGTH_L LENGTH_H INST ERROR CRC16_L CRC16_H)
@@ -315,8 +315,8 @@ int Protocol2PacketHandler::rxPacket(PortHandler *port, uint8_t *rxpacket)
   while(true)
   {
     rx_length += port->readPort(&rxpacket[rx_length], wait_length - rx_length);
-    printf("[ProtocolHandler2::rxPacket] Received %dB\n", rx_length);
-    for (int idx = 0; idx < rx_length; idx ++) printf("%02x ", rxpacket[idx]); printf("\n");
+    //printf("[ProtocolHandler2::rxPacket] Received %dB\n", rx_length);
+    //for (int idx = 0; idx < rx_length; idx ++) printf("%02x ", rxpacket[idx]); printf("\n");
     if (rx_length >= wait_length)
     {
       uint16_t idx = 0;
@@ -432,7 +432,7 @@ int Protocol2PacketHandler::rxPacket(PortHandler *port, uint8_t *rxpacket)
 int Protocol2PacketHandler::txRxPacket(PortHandler *port, uint8_t *txpacket, uint8_t *rxpacket, uint8_t *error)
 {
   int result = COMM_TX_FAIL;
-  printf("[ProtocolHandler:txrxpacket] start\n");
+  //printf("[ProtocolHandler:txrxpacket] start\n");
 
   // tx packet
   result = txPacket(port, txpacket);
@@ -464,7 +464,7 @@ int Protocol2PacketHandler::txRxPacket(PortHandler *port, uint8_t *txpacket, uin
 
   // rx packet
   do {
-    printf("[ProtocolHandler:txrxpacket]: attempting to rxPacket\n");
+    //printf("[ProtocolHandler:txrxpacket]: attempting to rxPacket\n");
     result = rxPacket(port, rxpacket);
   } while (result == COMM_SUCCESS && txpacket[PKT_ID] != rxpacket[PKT_ID]);
 
@@ -485,7 +485,6 @@ int Protocol2PacketHandler::ping(PortHandler *port, uint8_t id, uint8_t *error)
 int Protocol2PacketHandler::ping(PortHandler *port, uint8_t id, uint16_t *model_number, uint8_t *error)
 {
   int result                 = COMM_TX_FAIL;
-  printf("Got here 2\n");
   uint8_t txpacket[10]        = {0};
   uint8_t rxpacket[14]        = {0};
 
@@ -497,8 +496,6 @@ int Protocol2PacketHandler::ping(PortHandler *port, uint8_t id, uint16_t *model_
   txpacket[PKT_LENGTH_H]      = 0;
   txpacket[PKT_INSTRUCTION]   = INST_PING;
 
-  printf("[ProtocolHandler::ping] sending packet\n");
-  printf("[][]\n");
   result = txRxPacket(port, txpacket, rxpacket, error);
   if (result == COMM_SUCCESS && model_number != 0)
     *model_number = DXL_MAKEWORD(rxpacket[PKT_PARAMETER0+1], rxpacket[PKT_PARAMETER0+2]);
@@ -511,7 +508,6 @@ int Protocol2PacketHandler::broadcastPing(PortHandler *port, std::vector<uint8_t
   const int STATUS_LENGTH     = 14;
   int result                  = COMM_TX_FAIL;
 
-  printf("[Protocol2Packet::BCastPing]\n");
   id_list.clear();
 
   uint16_t rx_length          = 0;

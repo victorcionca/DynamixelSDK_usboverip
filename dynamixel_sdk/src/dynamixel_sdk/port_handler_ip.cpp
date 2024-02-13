@@ -148,7 +148,7 @@ int PortHandlerIP::getBaudRate()
 int PortHandlerIP::getBytesAvailable()
 {
   // TODO: this probably stays the same
-  printf("[PortHandlerIP::getBytesAvailable]\n");
+  //printf("[PortHandlerIP::getBytesAvailable]\n");
   int bytes_available;
   ioctl(socket_fd_, FIONREAD, &bytes_available);
   return bytes_available;
@@ -189,10 +189,10 @@ int PortHandlerIP::readPort(uint8_t *packet, int length)
       }
     } else {
       buffer_length = result;
-      printf("Read %dB: ", result);
-      for (int i = 0; i < result; i++)
-        printf("%02x ", read_buffer[i]);
-      printf("\n");
+      //printf("Read %dB: ", result);
+      //for (int i = 0; i < result; i++)
+      //  printf("%02x ", read_buffer[i]);
+      //printf("\n");
       // copy from buffer into packet min(remaining, result)
       // move buffer contents back by min(remaining, result)
       if (result < remaining) {
@@ -216,7 +216,7 @@ int PortHandlerIP::writePort(uint8_t *packet, int length)
 {
   // This function changes to include he framing of the USB packet
   int result = 0;
-  printf("Writing\n");
+  //printf("Writing\n");
   uint16_t new_length = htons(length);
   uint8_t *buf = (uint8_t*)malloc(length+2+2);
   buf[0] = PORT_HANDLER_IP_PKTSTART;
