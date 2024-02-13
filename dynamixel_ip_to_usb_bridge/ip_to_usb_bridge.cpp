@@ -13,7 +13,8 @@ using namespace dynamixel;
 #define USB_MIN_LENGTH 11
 
 IPtoUsbBridge::IPtoUsbBridge(int ip_port, const char *usb_port)
-: bridge_ip_port(ip_port)
+: bridge_ip_port(ip_port),
+  client_ip_known(false)
 {
     strncpy(port_name_, usb_port, 100);
 }
@@ -24,7 +25,7 @@ bool IPtoUsbBridge::setupIPSocket()
 
     bzero(&server_addr,  sizeof(server_addr));
 
-    ip_socket_fd_ = socket(AF_INET, SOCK_STREAM, 0);
+    ip_socket_fd_ = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
     if (ip_socket_fd_ < 0) return false;
 
     server_addr.sin_family = AF_INET;
@@ -33,31 +34,31 @@ bool IPtoUsbBridge::setupIPSocket()
 
     if (bind(ip_socket_fd_, (struct sockaddr*)&server_addr, sizeof(server_addr))){
         // TODO indicate error?
-        return false;
-    }
-
-    // Mark the queue for listening
-    if (listen(ip_socket_fd_, 1)){
+        printf("[Bridge::setupIPSocket] Error binding\n");
         return false;
     }
 
     return true;
 }
 
-bool IPtoUsbBridge::setupUSBPort()
+bool IPtoUsbBridge::setupUSBPort(int cflag_baud)
 {
     /**
      * TODO
      * to start we set up the USB port with default (1M) bandwidth.
      * Later we can look at obtaining the bandwidth over IP.
      */
-    int baudrate = B1000000;
+    int baudrate = cflag_baud;
     struct termios newtio;
+    closeUSBPort();
+    printf("[Bridge::setupUSB] Baudrate set to %x\n", baudrate);
 
     usb_socket_fd_ = open(port_name_, O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (usb_socket_fd_ < 0)
     {
-        printf("[PortHandlerLinux::SetupPort] Error opening serial port!\n");
+        printf("[Bridge::setupUSB] Error opening serial port %s!\n",
+                port_name_);
+        perror("[Bridge::setupUSB]");
         return false;
     }
 
@@ -79,66 +80,71 @@ bool IPtoUsbBridge::setupUSBPort()
     return true;
 }
 
-void IPtoUsbBridge::read_ip_and_send_usb()
+int IPtoUsbBridge::read_ip_and_send_usb(int client_socket)
 {
     // Ingress IP data is always framed
     uint8_t byte;
     uint16_t length, temp_length;
-    uint8_t *packet;
+    uint8_t packet[100];
     int result;
-    result = read(ip_socket_fd_, &byte, 1);
+    printf("[Bridge::read_ip]\n");
+    // Read up to 100B -- TODO double check that this sufficient
+    if (client_ip_known){
+    result = recv(client_socket, packet, 100, 0);
+    }else{
+        socklen_t addr_len = sizeof(client_ip);
+        result = recvfrom(client_socket, packet, 100, 0, 
+                        (struct sockaddr*)&client_ip,
+                        &addr_len);
+        char host[NI_MAXHOST], service[NI_MAXSERV];
+        int s = getnameinfo((struct sockaddr*)&client_ip, addr_len,
+                            host, NI_MAXHOST, service, NI_MAXSERV,
+                            NI_NUMERICSERV);
+        if (s == 0){
+            printf("[Bridge] Connection from %s:%s\n", host, service);
+        }
+        client_ip_known = true;
+    }
     if (result == -1){
         // TODO analyse error? We know there is data available.
-        return;
+        printf("[Bridge::read_ip] error reading buffer\n");
+        perror("[Bridge::read_ip]");
+        return -1;
     }
-    if (byte != PORT_HANDLER_IP_PKTSTART){
+    printf("[Bridge::read_ip] Received %dB: ", result);
+    for (int i=0;i<result;i++) printf("%02x ", packet[i]);printf("\n");
+    // Check the structure
+    if (packet[0] != PORT_HANDLER_IP_PKTSTART){
         // TODO this is a problem
         printf("Error: packet start of frame missing\n");
-        return;
+        return -1;
     }
-    result = read(ip_socket_fd_, &length, 2);
-    if (result != 2){
-        printf("Error: reading packet length\n");
-        return;
-    }
-    // Convert length back to host notation
-    length = htons(length);
-    temp_length = length;
+    // Get length of the USB payload
+    length = htons(((uint16_t*)(packet+1))[0]);
 
-    packet = (uint8_t*)malloc(length);
-    uint8_t *cursor = packet;
-    while (length > 0){
-        result = read(ip_socket_fd_, cursor, length);
-        if (result == -1) continue;
-        length -= result;
-        cursor += result;
-    }
-    // Read the packet termination
-    result = read(ip_socket_fd_, &byte, 1);
-    if (result == -1){
-        // TODO
-        return;
-    }
-    if (byte != PORT_HANDLER_IP_PKTEND){
-        printf("Error: reading packet termination\n");
-        return;
-    }
+    printf("[Bridge::read_ip] USB payload length is %d\n", length);
 
     /* Now forward the packet over USB */
-    printf("IP->USB: read %d bytes, sending to USB\n", temp_length);
-    cursor = packet;
+    printf("[Bridge::read_ip] Sending to USB\n");
+    
+    uint8_t *cursor = packet+3;
+    temp_length = length;
     while (temp_length > 0){
         result = write(usb_socket_fd_, cursor, temp_length);
-        if (result == -1) continue; // TODO check for error
+        if (result == -1){
+            perror("[Bridge::readIP] write to USB error\n");
+            continue; // TODO check for error
+        }
         temp_length -= result;
         cursor += result;
     }
-    printf("IP->USB: successfully sent %d bytes to USB\n", temp_length);
+    printf("[Bridge::read_ip] Successfully sent %d bytes to USB\n", temp_length);
 
     // Done!
+    return 0;
 }
 
-void IPtoUsbBridge::read_usb_and_send_ip()
+void IPtoUsbBridge::read_usb_and_send_ip(int client_socket)
 {
     // Read as much as we can from the USB and send over IP.
     // The protocol layer above will take care of framing, etc.
@@ -149,9 +155,18 @@ void IPtoUsbBridge::read_usb_and_send_ip()
         result = read(usb_socket_fd_, packet, USB_MIN_LENGTH);
         // Forward over IP
         printf("USB->IP: read %d bytes from USB\n", result);
+        for (int i = 0; i < result; i++)
+            printf("%02x ", packet[i]);
+        printf("\n");
         if (result > 0){
-            write(ip_socket_fd_, packet, result);
-            printf("USB->IP: successfully sent %d bytes to IP\n", result);
+            int ip_res = 0;
+            ip_res = sendto(client_socket, packet, result, 0,
+                            (struct sockaddr*)&client_ip,
+                            sizeof(client_ip));
+            if (ip_res == -1) perror("USB->IP ");
+            else
+            printf("USB->IP: successfully sent %d (%d) bytes to IP\n",
+                    result, ip_res);
         }
     }while (result > 0);
 }
@@ -160,33 +175,25 @@ void IPtoUsbBridge::bridge()
 {
     struct pollfd watched_fds[2];
 
-    // Accept connections on the IP port
-    struct sockaddr client_addr;
-    socklen_t client_addr_len;
-    client_addr_len = sizeof(client_addr);
-    int client_sock;
-    client_sock = accept4(ip_socket_fd_, &client_addr, &client_addr_len,
-                            SOCK_NONBLOCK); // Open non-blocking
-    if (client_sock > 0){
-        printf("[Bridge::bridge] client connected %d\n", client_sock);
-    }else{
-        perror("[Bridge::bridge]");
-    }
-    
     // Start listening for data on both IP and USB ports
     watched_fds[0].fd = ip_socket_fd_;
     watched_fds[0].events = POLLIN;
     watched_fds[1].fd = usb_socket_fd_;
     watched_fds[1].events = POLLIN;
     while (true){
-        if (poll(watched_fds, 1, 100) > 0){ // Wait for 10ms
+        if (poll(watched_fds, 2, 10) > 0){ // Wait for 10ms
             // process events
+            printf("[Bridge::bridge] data available\n");
             if (watched_fds[0].revents){
-                read_ip_and_send_usb();
+                printf("[Bridge::bridge] on ip data\n");
+                if (read_ip_and_send_usb(ip_socket_fd_) < 0) break;
+                printf("All good\n");
             }
 
             if (watched_fds[1].revents){
-                read_usb_and_send_ip();
+                printf("[Bridge::bridge] on usb data\n");
+                read_usb_and_send_ip(ip_socket_fd_);
+                printf("All good\n");
             }
         }
     }
@@ -197,7 +204,9 @@ void IPtoUsbBridge::closeIPSocket(){
 }
 
 void IPtoUsbBridge::closeUSBPort(){
-    close(usb_socket_fd_);
+    if (usb_socket_fd_ != -1)
+        close(usb_socket_fd_);
+    usb_socket_fd_ = -1;
 }
 
 void clearPort();
@@ -216,17 +225,21 @@ bool isPacketTimeout();
 
 int main(){
     // TODO - maybe pass the ip and usb ports as cmd line arguments?
-    auto bridge = new IPtoUsbBridge(66666, "/dev/ttyDXL");
+    auto bridge = new IPtoUsbBridge(6666, "/dev/ttyDXL");
     if (!bridge->setupIPSocket()){
         printf("[Bridge::SetupIPSocket] error setting up IP socket\n");
         return -1;
     }
-    if (!bridge->setupUSBPort()){
+    if (!bridge->setupUSBPort(B57600)){
         printf("[Bridge::SetupUSBPort] error setting up USB comms\n");
         //delete bridge;
         //return -1;
     }
-
+    if (!bridge->setupUSBPort(B1000000)) {
+        printf("[Bridge::SetupUSBPort] error setting up USB comms\n");
+        //delete bridge;
+        //return -1;
+    }
     bridge->bridge();
 
     return 0;

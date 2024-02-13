@@ -22,14 +22,16 @@ private:
     int ip_socket_fd_;
     int bridge_ip_port;
     struct addrinfo bridge_ip_;
+    struct sockaddr_in client_ip;
+    bool client_ip_known;
     int usb_socket_fd_;
     char port_name_[100]; // For compatibility
     double packet_start_time_;
     double packet_timeout_;
     double tx_time_per_byte;
 
-    void read_ip_and_send_usb();
-    void read_usb_and_send_ip();
+    int read_ip_and_send_usb(int client_socket);
+    void read_usb_and_send_ip(int client_socket);
 
     bool setupPort(const int cflag_baud);
     bool setCustomBaudrate(int speed);
@@ -61,7 +63,7 @@ public:
     /// @brief Setup USB port
     /// @return status of the port (true/false)
     ////////////////////////////////////////////////////////////////////////////////
-    bool setupUSBPort();
+    bool setupUSBPort(int cflag_baud);
 
     ////////////////////////////////////////////////////////////////////////////////
     /// @brief The function that closes the IP socket
