@@ -82,8 +82,13 @@ bool PortHandlerIP::openPort()
 
 void PortHandlerIP::closePort()
 {
-  if(socket_fd_ != -1)
+  printf("Closing port\n");
+  if(socket_fd_ != -1){
+    // Notify the bridge we are closing
+    uint8_t close_pkt[8] = {0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA};
+    writePort(close_pkt, 8);
     close(socket_fd_);
+  }
   socket_fd_ = -1;
   socket_open = false;
 }

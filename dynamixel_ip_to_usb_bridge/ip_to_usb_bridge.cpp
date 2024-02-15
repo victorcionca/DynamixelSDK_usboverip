@@ -90,7 +90,7 @@ int IPtoUsbBridge::read_ip_and_send_usb(int client_socket)
     printf("[Bridge::read_ip]\n");
     // Read up to 100B -- TODO double check that this sufficient
     if (client_ip_known){
-    result = recv(client_socket, packet, 100, 0);
+        result = recv(client_socket, packet, 100, 0);
     }else{
         socklen_t addr_len = sizeof(client_ip);
         result = recvfrom(client_socket, packet, 100, 0, 
@@ -122,6 +122,21 @@ int IPtoUsbBridge::read_ip_and_send_usb(int client_socket)
     // Get length of the USB payload
     length = htons(((uint16_t*)(packet+1))[0]);
 
+    // Check if the packet is a "closing socket" packet
+    if (length == 8){
+        int closing = 1;
+        for (int i=0;i<length;i++){
+            if (packet[3+i] != 0xAA){
+                closing = 0;
+                break;
+            }
+        }
+        if (closing){
+            printf("Client closing\n");
+            client_ip_known = 0;
+            return 0;
+        }
+    }
     printf("[Bridge::read_ip] USB payload length is %d\n", length);
 
     /* Now forward the packet over USB */
